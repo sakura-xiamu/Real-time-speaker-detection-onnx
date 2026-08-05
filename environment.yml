@@ -1,0 +1,18 @@
+name: speak-local-demo1
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - numpy>=1.26
+  - scipy>=1.11
+  - pip:
+      # Windows 用 DirectML；其他平台见 requirements.txt 中的平台标记
+      - onnxruntime-directml>=1.19.0; platform_system=="Windows"
+      - onnxruntime>=1.19.0; platform_system!="Windows"
+      - kaldi-native-fbank>=1.20.0
+      - fastapi>=0.115.0
+      - "uvicorn[standard]>=0.30.0"
+      - python-multipart>=0.0.9
+      - sse-starlette>=2.1.0

@@ -1,0 +1,11 @@
+# Windows: DirectML 加速；Linux/macOS 请改用 onnxruntime
+onnxruntime-directml>=1.19.0; platform_system=="Windows"
+onnxruntime>=1.19.0; platform_system!="Windows"
+
+numpy>=1.26.0
+scipy>=1.11.0
+kaldi-native-fbank>=1.20.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+sse-starlette>=2.1.0

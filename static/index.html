@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实时说话人检测</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b98a8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --success: #22c55e;
+      --warning: #f59e0b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(circle at top, #1e293b 0%, var(--bg) 45%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .page {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 1.6rem;
+      font-weight: 650;
+    }
+
+    header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 0.9rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .dot.connected { background: var(--success); box-shadow: 0 0 10px rgba(34, 197, 94, 0.6); }
+    .dot.running { background: var(--primary); box-shadow: 0 0 10px rgba(59, 130, 246, 0.6); }
+    .dot.error { background: var(--danger); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: rgba(26, 35, 50, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      backdrop-filter: blur(8px);
+      min-width: 0;
+    }
+
+    .panel h2 {
+      margin: 0 0 16px;
+      font-size: 1.05rem;
+    }
+
+    .results-title {
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.15s ease;
+    }
+
+    .results-title:hover { color: var(--primary); }
+
+    .results-title::after {
+      content: " ⛶";
+      font-size: 0.85em;
+      color: var(--muted);
+    }
+
+    .panel.results-fullscreen {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      width: 100vw;
+      height: 100vh;
+      max-width: none;
+      margin: 0;
+      border-radius: 0;
+      overflow: auto;
+      background: var(--panel);
+    }
+
+    body.results-fullscreen-active { overflow: hidden; }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .field { margin-bottom: 14px; }
+
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #111827;
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+
+    input[type="checkbox"] {
+      width: auto;
+      margin-right: 8px;
+    }
+
+    input[type="range"] {
+      padding: 0;
+    }
+
+    input[type="file"] {
+      padding: 8px;
+      font-size: 0.85rem;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn-primary { background: var(--primary); color: white; flex: 1; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-danger { background: var(--danger); color: white; flex: 1; }
+    .btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .message {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      min-height: 42px;
+    }
+
+    .message.error {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.25);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .metric {
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+
+    .metric.metric-wide {
+      grid-column: span 2;
+      min-width: 0;
+    }
+
+    .metric.metric-wide .value {
+      font-size: 0.95rem;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      line-height: 1.35;
+    }
+
+    @media (max-width: 520px) {
+      .metric.metric-wide { grid-column: auto; }
+    }
+
+    .metric.hover-zoom-source { opacity: 0.45; }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-bottom: 6px;
+    }
+
+    .metric .value {
+      font-size: 1.25rem;
+      font-weight: 650;
+    }
+
+    .metric .value.warning { color: var(--warning); }
+
+    .hover-zoom-layer {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(3);
+      transform-origin: center center;
+      z-index: 3000;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+
+    .hover-zoom-layer[hidden] { display: none !important; }
+
+    .hover-zoom-layer .metric {
+      margin: 0;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+      cursor: default;
+      opacity: 1 !important;
+      background: rgba(15, 23, 42, 0.25) !important;
+      backdrop-filter: blur(6px);
+      border-color: rgba(45, 58, 79, 0.55);
+    }
+
+    .flash-green {
+      animation: flash-green 1s ease-in-out infinite;
+    }
+
+    .flash-red {
+      animation: flash-red 1s ease-in-out infinite;
+    }
+
+    @keyframes flash-green {
+      0%, 100% { border-color: var(--border); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+      50% { border-color: var(--success); box-shadow: 0 0 24px 2px rgba(34, 197, 94, 0.45); }
+    }
+
+    @keyframes flash-red {
+      0%, 100% { border-color: var(--border); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+      50% { border-color: var(--danger); box-shadow: 0 0 24px 2px rgba(239, 68, 68, 0.45); }
+    }
+
+    .table-wrap {
+      width: 100%;
+      max-width: 100%;
+      overflow: auto;
+      overscroll-behavior: contain;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 20px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      table-layout: fixed;
+    }
+
+    table.resizable-table {
+      width: max-content;
+      min-width: 100%;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(45, 58, 79, 0.7);
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #152033;
+      color: var(--muted);
+      font-weight: 600;
+      user-select: none;
+    }
+
+    th .th-label {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding-right: 8px;
+    }
+
+    th .col-resizer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      touch-action: none;
+    }
+
+    th .col-resizer::after {
+      content: "";
+      position: absolute;
+      top: 18%;
+      bottom: 18%;
+      right: 3px;
+      width: 2px;
+      border-radius: 999px;
+      background: rgba(139, 152, 168, 0.45);
+      transition: background 0.15s ease;
+    }
+
+    th .col-resizer:hover::after,
+    body.col-resizing th .col-resizer::after {
+      background: rgba(59, 130, 246, 0.95);
+    }
+
+    body.col-resizing {
+      cursor: col-resize;
+      user-select: none;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .speaker-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .empty {
+      padding: 28px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .history-wrap { max-height: 320px; }
+
+    .stream-metrics {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      background: rgba(15, 23, 42, 0.65);
+      line-height: 1.5;
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      line-height: 1.45;
+      margin: 0 0 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div>
+        <h1>实时说话人检测</h1>
+        <p>浏览器麦克风 · HTTP PCM · 独立初始化 · SSE 实时结果（纯 ONNX Runtime）</p>
+      </div>
+      <div class="badge">
+        <span id="sseDot" class="dot"></span>
+        <span id="sseStatus">SSE 未连接</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="panel">
+        <h2>检测配置</h2>
+
+        <div class="field">
+          <label for="embeddingModel">声纹模型</label>
+          <select id="embeddingModel"></select>
+        </div>
+        <div class="field">
+          <label for="windowSec">窗口长度 (秒)</label>
+          <input id="windowSec" type="number" min="3" max="30" step="1" value="10">
+        </div>
+        <div class="field">
+          <label for="hopSec">滑动步长 (秒)</label>
+          <input id="hopSec" type="number" min="1" max="30" step="1" value="5">
+        </div>
+        <div class="field checkbox-row">
+          <input id="useGpu" type="checkbox" checked>
+          <label for="useGpu" style="margin:0;">使用 GPU/DirectML 加速</label>
+        </div>
+        <div class="field">
+          <label for="fixedSpeakerNum">固定说话人数 (0=自动)</label>
+          <input id="fixedSpeakerNum" type="number" min="0" step="1" value="0">
+        </div>
+        <div class="field">
+          <label for="verifyThreshold">声纹比对阈值</label>
+          <input id="verifyThreshold" type="number" min="0.1" max="0.99" step="0.01" value="0.55">
+        </div>
+        <div class="field">
+          <label for="slowThreshold">慢推理阈值 (毫秒，0=禁用)</label>
+          <input id="slowThreshold" type="number" min="0" step="100" value="1000">
+        </div>
+        <div class="field">
+          <label for="slowMaxConsecutive">连续慢推理次数 (0=禁用)</label>
+          <input id="slowMaxConsecutive" type="number" min="0" step="1" value="5">
+        </div>
+        <div class="field">
+          <label for="lowFreqInterval">降级低频检测间隔 (秒)</label>
+          <input id="lowFreqInterval" type="number" min="5" step="5" value="60">
+          <small class="hint" style="display:block;margin-top:4px;">连续慢推理达阈值后，改为每 N 秒检测一次</small>
+        </div>
+
+        <div id="browserAudioPanel">
+          <div class="field" id="browserInputGainField">
+            <label for="browserInputGain">
+              浏览器麦克风增益
+              <span id="browserInputGainValue">1.0×</span>
+            </label>
+            <input id="browserInputGain" type="range" min="0.1" max="3" step="0.1" value="1">
+            <small class="hint" style="display:block;margin-top:4px;">
+              Web Audio 手动增益；建议 AGC 开启时保持 1.0×
+            </small>
+          </div>
+          <div class="field checkbox-row">
+            <input id="browserAutoGainControl" type="checkbox" checked>
+            <label for="browserAutoGainControl" style="margin:0;">自动增益 (AGC)</label>
+          </div>
+          <div class="field checkbox-row">
+            <input id="browserNoiseSuppression" type="checkbox" checked>
+            <label for="browserNoiseSuppression" style="margin:0;">降噪 (noiseSuppression)</label>
+          </div>
+          <div class="field checkbox-row">
+            <input id="browserEchoCancellation" type="checkbox" checked>
+            <label for="browserEchoCancellation" style="margin:0;">回声消除 (echoCancellation)</label>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="initBtn" class="btn-primary" type="button">初始化模型</button>
+        </div>
+        <div class="actions">
+          <button id="startBtn" class="btn-primary" type="button" disabled>开始检测</button>
+          <button id="stopBtn" class="btn-danger" type="button" disabled>停止</button>
+        </div>
+        <div id="streamMetrics" class="stream-metrics">推流状态：请先初始化模型</div>
+
+        <h2 style="margin-top:1.25rem;font-size:1rem;">声纹（本人比对）</h2>
+        <p class="hint">
+          可先录制或选择本地音频暂存，不必先初始化；初始化或开始检测时自动完成注册（有效语音建议 ≥ 5 秒）。
+        </p>
+        <div class="actions" style="margin-top:8px;">
+          <button id="enrollStartBtn" class="btn-secondary" type="button">开始录声纹</button>
+          <button id="enrollFinishBtn" class="btn-primary" type="button" disabled>完成注册</button>
+        </div>
+        <div class="actions" style="margin-top:8px;">
+          <button id="enrollCancelBtn" class="btn-secondary" type="button" disabled>取消录制</button>
+          <button id="enrollClearBtn" class="btn-danger" type="button">清除声纹</button>
+        </div>
+        <div class="field" style="margin-top:12px;">
+          <label for="enrollFile">声纹音频文件</label>
+          <input id="enrollFile" type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.aac">
+        </div>
+        <div class="actions" style="margin-top:8px;">
+          <button id="enrollFromFileBtn" class="btn-primary" type="button" style="width:100%;">从文件注册</button>
+        </div>
+        <div id="enrollHint" class="message">未注册声纹</div>
+        <div id="actionMessage" class="message">请先初始化模型</div>
+      </aside>
+
+      <main class="panel" id="resultsPanel">
+        <h2 class="results-title" id="resultsTitle" title="点击全屏，再点或按 Esc 退出">实时结果</h2>
+        <div class="metrics">
+          <div class="metric metric-wide">
+            <div class="label">声纹模型</div>
+            <div id="metricModel" class="value">-</div>
+          </div>
+          <div class="metric">
+            <div class="label">运行状态</div>
+            <div id="metricState" class="value">idle</div>
+          </div>
+          <div class="metric" id="detectModeCard">
+            <div class="label">检测模式</div>
+            <div id="metricDetectMode" class="value" style="font-size:0.95rem;">正常</div>
+          </div>
+          <div class="metric">
+            <div class="label">已处理窗口</div>
+            <div id="metricWindows" class="value">0</div>
+          </div>
+          <div class="metric">
+            <div class="label">累计音频 (秒)</div>
+            <div id="metricAudioSec" class="value">0</div>
+          </div>
+          <div class="metric" id="speakersCard">
+            <div class="label">说话人数</div>
+            <div id="metricSpeakers" class="value">0</div>
+          </div>
+          <div class="metric" id="latencyCard">
+            <div class="label">推理延迟 (秒)</div>
+            <div id="metricLatency" class="value">0</div>
+          </div>
+          <div class="metric">
+            <div class="label">语音活跃比</div>
+            <div id="metricActiveRatio" class="value">0</div>
+          </div>
+          <div class="metric" id="enrolledCard">
+            <div class="label">声纹已注册</div>
+            <div id="metricEnrolled" class="value" style="font-size:0.95rem;">否</div>
+          </div>
+          <div class="metric" id="similarityCard">
+            <div class="label">声纹相似度</div>
+            <div id="metricSimilarity" class="value">-</div>
+          </div>
+          <div class="metric" id="identityCard">
+            <div class="label">本人 / 非本人</div>
+            <div id="metricIdentity" class="value" style="font-size:0.95rem;">-</div>
+          </div>
+        </div>
+        <div id="voiceDetail" class="message" style="margin-bottom:12px;"></div>
+
+        <h2>当前窗口分段</h2>
+        <div class="table-wrap">
+          <table id="segmentsTable" class="resizable-table" data-col-widths="100,100,100,90">
+            <thead>
+              <tr>
+                <th><span class="th-label">开始 (s)</span></th>
+                <th><span class="th-label">结束 (s)</span></th>
+                <th><span class="th-label">时长 (s)</span></th>
+                <th><span class="th-label">说话人</span></th>
+              </tr>
+            </thead>
+            <tbody id="segmentsBody">
+              <tr><td colspan="4" class="empty">暂无分段结果</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>窗口历史</h2>
+        <div class="table-wrap history-wrap">
+          <table id="historyTable" class="resizable-table" data-col-widths="90,90,100,100,100">
+            <thead>
+              <tr>
+                <th><span class="th-label">窗口 #</span></th>
+                <th><span class="th-label">人数</span></th>
+                <th><span class="th-label">活跃比</span></th>
+                <th><span class="th-label">延迟 (s)</span></th>
+                <th><span class="th-label">音频 (s)</span></th>
+              </tr>
+            </thead>
+            <tbody id="historyBody">
+              <tr><td colspan="5" class="empty">暂无历史记录</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="hoverZoomLayer" class="hover-zoom-layer" hidden></div>
+
+  <script>
+    const speakerColors = ["#60a5fa", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#fb7185"];
+    const SAMPLE_RATE = 16000;
+    const UPLOAD_INTERVAL_MS = 250;
+
+    const els = {
+      sseDot: document.getElementById("sseDot"),
+      sseStatus: document.getElementById("sseStatus"),
+      embeddingModel: document.getElementById("embeddingModel"),
+      windowSec: document.getElementById("windowSec"),
+      hopSec: document.getElementById("hopSec"),
+      useGpu: document.getElementById("useGpu"),
+      fixedSpeakerNum: document.getElementById("fixedSpeakerNum"),
+      verifyThreshold: document.getElementById("verifyThreshold"),
+      slowThreshold: document.getElementById("slowThreshold"),
+      slowMaxConsecutive: document.getElementById("slowMaxConsecutive"),
+      lowFreqInterval: document.getElementById("lowFreqInterval"),
+      browserInputGain: document.getElementById("browserInputGain"),
+      browserInputGainValue: document.getElementById("browserInputGainValue"),
+      browserAutoGainControl: document.getElementById("browserAutoGainControl"),
+      browserNoiseSuppression: document.getElementById("browserNoiseSuppression"),
+      browserEchoCancellation: document.getElementById("browserEchoCancellation"),
+      initBtn: document.getElementById("initBtn"),
+      startBtn: document.getElementById("startBtn"),
+      stopBtn: document.getElementById("stopBtn"),
+      enrollStartBtn: document.getElementById("enrollStartBtn"),
+      enrollFinishBtn: document.getElementById("enrollFinishBtn"),
+      enrollCancelBtn: document.getElementById("enrollCancelBtn"),
+      enrollClearBtn: document.getElementById("enrollClearBtn"),
+      enrollFile: document.getElementById("enrollFile"),
+      enrollFromFileBtn: document.getElementById("enrollFromFileBtn"),
+      enrollHint: document.getElementById("enrollHint"),
+      actionMessage: document.getElementById("actionMessage"),
+      streamMetrics: document.getElementById("streamMetrics"),
+      metricModel: document.getElementById("metricModel"),
+      metricState: document.getElementById("metricState"),
+      metricDetectMode: document.getElementById("metricDetectMode"),
+      detectModeCard: document.getElementById("detectModeCard"),
+      metricWindows: document.getElementById("metricWindows"),
+      metricAudioSec: document.getElementById("metricAudioSec"),
+      metricSpeakers: document.getElementById("metricSpeakers"),
+      metricLatency: document.getElementById("metricLatency"),
+      latencyCard: document.getElementById("latencyCard"),
+      metricActiveRatio: document.getElementById("metricActiveRatio"),
+      metricEnrolled: document.getElementById("metricEnrolled"),
+      metricSimilarity: document.getElementById("metricSimilarity"),
+      metricIdentity: document.getElementById("metricIdentity"),
+      speakersCard: document.getElementById("speakersCard"),
+      similarityCard: document.getElementById("similarityCard"),
+      identityCard: document.getElementById("identityCard"),
+      voiceDetail: document.getElementById("voiceDetail"),
+      segmentsBody: document.getElementById("segmentsBody"),
+      historyBody: document.getElementById("historyBody"),
+      resultsPanel: document.getElementById("resultsPanel"),
+      resultsTitle: document.getElementById("resultsTitle"),
+      hoverZoomLayer: document.getElementById("hoverZoomLayer"),
+    };
+
+    const state = {
+      sessionId: null,
+      initialized: false,
+      running: false,
+      enrolling: false,
+      capturing: false,
+      mediaStream: null,
+      audioContext: null,
+      inputGainNode: null,
+      processor: null,
+      source: null,
+      pcmQueue: [],
+      uploadTimer: null,
+      uploadedBytes: 0,
+      history: [],
+      sse: null,
+    };
+
+    function setMessage(text, isError = false) {
+      els.actionMessage.textContent = text;
+      els.actionMessage.classList.toggle("error", !!isError);
+    }
+
+    function setEnrollHint(text, isError = false) {
+      els.enrollHint.textContent = text;
+      els.enrollHint.classList.toggle("error", !!isError);
+    }
+
+    function getBrowserInputGain() {
+      const v = Number(els.browserInputGain.value);
+      return Number.isFinite(v) ? v : 1;
+    }
+
+    function updateBrowserInputGainLabel() {
+      els.browserInputGainValue.textContent = `${getBrowserInputGain().toFixed(1)}×`;
+    }
+
+    function applyBrowserInputGain() {
+      if (state.inputGainNode) {
+        state.inputGainNode.gain.value = getBrowserInputGain();
+      }
+    }
+
+    function getBrowserAudioConstraints() {
+      return {
+        channelCount: 1,
+        echoCancellation: els.browserEchoCancellation.checked,
+        noiseSuppression: els.browserNoiseSuppression.checked,
+        autoGainControl: els.browserAutoGainControl.checked,
+      };
+    }
+
+    async function applyBrowserAudioConstraintsLive() {
+      if (!state.mediaStream) return;
+      const track = state.mediaStream.getAudioTracks()[0];
+      if (!track || !track.applyConstraints) return;
+      try {
+        await track.applyConstraints(getBrowserAudioConstraints());
+      } catch (err) {
+        console.warn("applyConstraints failed", err);
+      }
+    }
+
+    function updateButtons() {
+      const busy = state.running || state.enrolling;
+      els.initBtn.disabled = state.running || state.enrolling;
+      els.startBtn.disabled = !state.initialized || state.running || state.enrolling;
+      els.stopBtn.disabled = !state.running && !state.enrolling;
+      els.enrollStartBtn.disabled = state.enrolling;
+      els.enrollFinishBtn.disabled = !state.enrolling;
+      els.enrollCancelBtn.disabled = !state.enrolling;
+      els.enrollFromFileBtn.disabled = state.enrolling;
+      els.embeddingModel.disabled = busy;
+      els.useGpu.disabled = busy;
+      els.windowSec.disabled = state.running;
+      els.hopSec.disabled = state.running;
+      els.fixedSpeakerNum.disabled = state.running;
+      els.verifyThreshold.disabled = state.running;
+      els.slowThreshold.disabled = state.running;
+      els.slowMaxConsecutive.disabled = state.running;
+      els.lowFreqInterval.disabled = state.running;
+    }
+
+    async function api(path, options = {}) {
+      const resp = await fetch(path, options);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(data.message || `HTTP ${resp.status}`);
+      }
+      return data;
+    }
+
+    async function loadModels() {
+      const data = await api("/api/models");
+      els.embeddingModel.innerHTML = "";
+      for (const m of data.embedding_models) {
+        const opt = document.createElement("option");
+        opt.value = m.key;
+        const name = m.label || m.display_name || m.key;
+        if (m.available) {
+          opt.textContent = `${name}（${m.size_label || "未知大小"}）`;
+        } else {
+          opt.textContent = `${name}（未下载）`;
+          opt.disabled = true;
+        }
+        if (m.default && m.available) opt.selected = true;
+        els.embeddingModel.appendChild(opt);
+      }
+      if (!els.embeddingModel.value) {
+        const first = data.embedding_models.find((m) => m.available);
+        if (first) els.embeddingModel.value = first.key;
+      }
+    }
+
+    function connectSSE() {
+      if (state.sse) state.sse.close();
+      const es = new EventSource("/api/sse/events");
+      state.sse = es;
+      es.onopen = () => {
+        if (!state.running) {
+          els.sseDot.className = "dot connected";
+          els.sseStatus.textContent = "SSE 已连接";
+        }
+      };
+      es.onerror = () => {
+        els.sseDot.className = "dot error";
+        els.sseStatus.textContent = "SSE 断开/重连中";
+      };
+      es.addEventListener("status", (ev) => {
+        try { applyStatus(JSON.parse(ev.data)); } catch (_) {}
+      });
+      es.addEventListener("diarization_result", (ev) => {
+        try { applyResult(JSON.parse(ev.data)); } catch (_) {}
+      });
+      es.addEventListener("error", (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          setMessage(data.message || "错误", true);
+        } catch (_) {}
+      });
+    }
+
+    function applyStatus(data) {
+      state.initialized = !!data.initialized;
+      const enrolled = !!data.has_enrollment;
+      const pending = !!data.voice_enroll_pending;
+      els.metricEnrolled.textContent = enrolled ? "是" : (pending ? "暂存" : "否");
+      els.metricModel.textContent = data.embedding_model_key || "-";
+      els.metricState.textContent = data.state || "idle";
+
+      if (data.voice_enroll_last_error) {
+        setEnrollHint(data.voice_enroll_last_error, true);
+      } else if (pending) {
+        setEnrollHint(`声纹已暂存 ${data.voice_enroll_pending_sec || 0}s，等待初始化/开始检测时注册`);
+      } else if (enrolled) {
+        setEnrollHint("声纹已注册，检测时自动比对");
+      } else if (!state.enrolling) {
+        setEnrollHint("未注册声纹");
+      }
+
+      const s = data.session;
+      if (!s) {
+        if (!state.running) {
+          els.sseDot.classList.remove("running");
+        }
+        updateButtons();
+        return;
+      }
+
+      state.enrolling = !!s.enrolling;
+      if (s.enrolling) {
+        setEnrollHint(`录制中… 已缓冲 ${s.enroll_buffered_sec || 0}s`);
+      }
+
+      const lowFreq = !!s.low_frequency_mode;
+      els.metricDetectMode.textContent = lowFreq ? "低频" : "正常";
+      els.metricDetectMode.classList.toggle("warning", lowFreq);
+      els.detectModeCard.classList.toggle("flash-red", lowFreq);
+
+      els.metricWindows.textContent = String(s.window_index || 0);
+      els.metricAudioSec.textContent = String(s.audio_sec || 0);
+      if (s.embedding_model_key) els.metricModel.textContent = s.embedding_model_key;
+
+      if (s.running) {
+        state.running = true;
+        state.sessionId = s.session_id || state.sessionId;
+        els.sseDot.className = "dot running";
+        els.sseStatus.textContent = "检测中";
+        if (s.message) setMessage(s.message);
+      } else if (!state.enrolling) {
+        if (state.initialized) {
+          els.sseDot.className = "dot connected";
+          els.sseStatus.textContent = "模型就绪";
+        }
+      }
+      if (s.last_error) setMessage(s.last_error, true);
+      updateButtons();
+    }
+
+    function applyResult(data) {
+      els.metricSpeakers.textContent = String(data.num_speakers ?? 0);
+      els.metricLatency.textContent = String(data.latency_sec ?? 0);
+      els.metricActiveRatio.textContent = String(data.active_ratio ?? 0);
+      els.metricWindows.textContent = String(data.window_index ?? 0);
+      els.metricAudioSec.textContent = String(data.audio_sec ?? 0);
+
+      const lowFreq = !!data.low_frequency_mode;
+      els.metricDetectMode.textContent = lowFreq ? "低频" : "正常";
+      els.metricDetectMode.classList.toggle("warning", lowFreq);
+
+      const thrMs = Number(els.slowThreshold.value);
+      const thrSec = thrMs > 0 ? thrMs / 1000 : 0;
+      const lat = Number(data.latency_sec) || 0;
+      els.latencyCard.classList.remove("flash-green", "flash-red");
+      if (thrSec > 0 && lat > 0) {
+        els.latencyCard.classList.add(lat > thrSec ? "flash-red" : "flash-green");
+      }
+
+      els.speakersCard.classList.toggle("flash-green", (data.num_speakers || 0) > 0);
+
+      const voice = data.voice || {};
+      if (voice.enrolled) {
+        const sim = voice.similarity;
+        els.metricSimilarity.textContent = sim == null ? "-" : sim.toFixed(3);
+        if (voice.is_me === true) {
+          els.metricIdentity.textContent = "本人";
+          els.identityCard.classList.add("flash-green");
+          els.identityCard.classList.remove("flash-red");
+          els.similarityCard.classList.add("flash-green");
+          els.similarityCard.classList.remove("flash-red");
+        } else if (voice.is_me === false) {
+          els.metricIdentity.textContent = "非本人";
+          els.identityCard.classList.add("flash-red");
+          els.identityCard.classList.remove("flash-green");
+          els.similarityCard.classList.add("flash-red");
+          els.similarityCard.classList.remove("flash-green");
+        } else {
+          els.metricIdentity.textContent = "-";
+          els.identityCard.classList.remove("flash-green", "flash-red");
+          els.similarityCard.classList.remove("flash-green", "flash-red");
+        }
+        const lines = (voice.speakers || []).map((sp) => {
+          if (sp.skipped) return `说话人 ${sp.speaker}: 语音过短跳过`;
+          if (sp.similarity == null) return `说话人 ${sp.speaker}: 提取失败`;
+          return `说话人 ${sp.speaker}: 相似=${sp.similarity.toFixed(3)} ${sp.is_me ? "✓本人" : ""}`;
+        });
+        els.voiceDetail.textContent = lines.join("；") || "本窗口无可比对语音";
+      } else {
+        els.metricSimilarity.textContent = "-";
+        els.metricIdentity.textContent = "-";
+        els.voiceDetail.textContent = "未注册声纹";
+        els.identityCard.classList.remove("flash-green", "flash-red");
+        els.similarityCard.classList.remove("flash-green", "flash-red");
+      }
+
+      const segs = data.segments || [];
+      if (!segs.length) {
+        els.segmentsBody.innerHTML = `<tr><td colspan="4" class="empty">暂无分段结果</td></tr>`;
+      } else {
+        els.segmentsBody.innerHTML = segs.map((seg) => {
+          const color = speakerColors[seg.speaker % speakerColors.length];
+          const dur = (seg.end - seg.start).toFixed(2);
+          return `<tr>
+            <td>${seg.start.toFixed(2)}</td>
+            <td>${seg.end.toFixed(2)}</td>
+            <td>${dur}</td>
+            <td><span class="speaker-tag" style="background:${color}33;color:${color}">S${seg.speaker}</span></td>
+          </tr>`;
+        }).join("");
+      }
+
+      state.history.unshift({
+        window_index: data.window_index,
+        num_speakers: data.num_speakers,
+        active_ratio: data.active_ratio,
+        latency_sec: data.latency_sec,
+        audio_sec: data.audio_sec,
+      });
+      state.history = state.history.slice(0, 30);
+      els.historyBody.innerHTML = state.history.map((h) => `<tr>
+        <td>${h.window_index}</td>
+        <td>${h.num_speakers}</td>
+        <td>${h.active_ratio}</td>
+        <td>${h.latency_sec}</td>
+        <td>${h.audio_sec}</td>
+      </tr>`).join("");
+    }
+
+    function floatTo16BitPCM(float32Array) {
+      const buffer = new ArrayBuffer(float32Array.length * 2);
+      const view = new DataView(buffer);
+      for (let i = 0; i < float32Array.length; i++) {
+        let s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+      return new Uint8Array(buffer);
+    }
+
+    function downsample(buffer, inRate, outRate) {
+      if (inRate === outRate) return buffer;
+      const ratio = inRate / outRate;
+      const newLen = Math.floor(buffer.length / ratio);
+      const result = new Float32Array(newLen);
+      for (let i = 0; i < newLen; i++) {
+        const idx = Math.floor(i * ratio);
+        result[i] = buffer[idx];
+      }
+      return result;
+    }
+
+    async function startMic() {
+      if (state.capturing) return;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: getBrowserAudioConstraints(),
+      });
+      state.mediaStream = stream;
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      state.audioContext = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      state.source = source;
+      const inputGain = ctx.createGain();
+      inputGain.gain.value = getBrowserInputGain();
+      state.inputGainNode = inputGain;
+
+      const bufferSize = 4096;
+      const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
+      state.processor = processor;
+      processor.onaudioprocess = (e) => {
+        if (!state.running && !state.enrolling) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const down = downsample(input, ctx.sampleRate, SAMPLE_RATE);
+        state.pcmQueue.push(floatTo16BitPCM(down));
+      };
+      const mute = ctx.createGain();
+      mute.gain.value = 0;
+      source.connect(inputGain);
+      inputGain.connect(processor);
+      processor.connect(mute);
+      mute.connect(ctx.destination);
+
+      state.capturing = true;
+      state.uploadTimer = setInterval(flushPcm, UPLOAD_INTERVAL_MS);
+    }
+
+    async function flushPcm() {
+      if ((!state.running && !state.enrolling) || !state.sessionId || !state.pcmQueue.length) return;
+      const chunks = state.pcmQueue.splice(0, state.pcmQueue.length);
+      let total = 0;
+      for (const c of chunks) total += c.length;
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        merged.set(c, offset);
+        offset += c.length;
+      }
+      try {
+        const resp = await fetch(`/api/stream/chunk?session_id=${encodeURIComponent(state.sessionId)}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "X-Session-Id": state.sessionId,
+          },
+          body: merged,
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.message || "上传失败");
+        state.uploadedBytes += merged.length;
+        const mode = state.enrolling && !state.running ? "声纹录制" : "检测推流";
+        els.streamMetrics.textContent =
+          `${mode} · 已上传 ${(state.uploadedBytes / 32000).toFixed(1)}s PCM · 最近块 ${merged.length} bytes`;
+      } catch (err) {
+        els.streamMetrics.textContent = `推流错误: ${err.message}`;
+      }
+    }
+
+    async function stopMic() {
+      if (state.uploadTimer) {
+        clearInterval(state.uploadTimer);
+        state.uploadTimer = null;
+      }
+      if (state.processor) {
+        try { state.processor.disconnect(); } catch (_) {}
+        state.processor = null;
+      }
+      if (state.inputGainNode) {
+        try { state.inputGainNode.disconnect(); } catch (_) {}
+        state.inputGainNode = null;
+      }
+      if (state.source) {
+        try { state.source.disconnect(); } catch (_) {}
+        state.source = null;
+      }
+      if (state.audioContext) {
+        try { await state.audioContext.close(); } catch (_) {}
+        state.audioContext = null;
+      }
+      if (state.mediaStream) {
+        state.mediaStream.getTracks().forEach((t) => t.stop());
+        state.mediaStream = null;
+      }
+      state.pcmQueue = [];
+      state.capturing = false;
+    }
+
+    async function decodeAudioFileToPcm(file) {
+      const arrayBuf = await file.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      try {
+        const decoded = await ctx.decodeAudioData(arrayBuf.slice(0));
+        const ch0 = decoded.getChannelData(0);
+        let mono;
+        if (decoded.numberOfChannels > 1) {
+          mono = new Float32Array(decoded.length);
+          for (let c = 0; c < decoded.numberOfChannels; c++) {
+            const data = decoded.getChannelData(c);
+            for (let i = 0; i < decoded.length; i++) mono[i] += data[i];
+          }
+          for (let i = 0; i < mono.length; i++) mono[i] /= decoded.numberOfChannels;
+        } else {
+          mono = ch0;
+        }
+        const down = downsample(mono, decoded.sampleRate, SAMPLE_RATE);
+        return floatTo16BitPCM(down);
+      } finally {
+        try { await ctx.close(); } catch (_) {}
+      }
+    }
+
+    function initResizableTables() {
+      document.querySelectorAll("table.resizable-table").forEach((table) => {
+        const widths = (table.dataset.colWidths || "")
+          .split(",")
+          .map((x) => Number(x.trim()))
+          .filter((n) => Number.isFinite(n) && n > 0);
+        const ths = table.querySelectorAll("thead th");
+        ths.forEach((th, idx) => {
+          th.style.position = "relative";
+          if (widths[idx]) th.style.width = `${widths[idx]}px`;
+          if (th.querySelector(".col-resizer")) return;
+          const resizer = document.createElement("div");
+          resizer.className = "col-resizer";
+          th.appendChild(resizer);
+          resizer.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+            const startX = event.pageX;
+            const startWidth = th.offsetWidth;
+            document.body.classList.add("col-resizing");
+            function onMouseMove(moveEvent) {
+              const w = Math.max(60, startWidth + (moveEvent.pageX - startX));
+              th.style.width = `${w}px`;
+            }
+            function onMouseUp() {
+              document.body.classList.remove("col-resizing");
+              document.removeEventListener("mousemove", onMouseMove);
+              document.removeEventListener("mouseup", onMouseUp);
+            }
+            document.addEventListener("mousemove", onMouseMove);
+            document.addEventListener("mouseup", onMouseUp);
+          });
+        });
+      });
+    }
+
+    function toggleResultsFullscreen() {
+      const on = els.resultsPanel.classList.toggle("results-fullscreen");
+      document.body.classList.toggle("results-fullscreen-active", on);
+    }
+
+    function initCenterHoverZoom() {
+      const layer = els.hoverZoomLayer;
+      let current = null;
+      function hideZoom() {
+        if (current) current.classList.remove("hover-zoom-source");
+        current = null;
+        layer.hidden = true;
+        layer.innerHTML = "";
+      }
+      function showZoom(el) {
+        if (current === el) return;
+        hideZoom();
+        current = el;
+        el.classList.add("hover-zoom-source");
+        const clone = el.cloneNode(true);
+        clone.classList.remove("hover-zoom-source");
+        layer.innerHTML = "";
+        layer.appendChild(clone);
+        layer.hidden = false;
+      }
+      document.querySelector(".metrics").addEventListener("mouseover", (ev) => {
+        const card = ev.target.closest(".metric");
+        if (card) showZoom(card);
+      });
+      document.querySelector(".metrics").addEventListener("mouseleave", hideZoom);
+    }
+
+    els.browserInputGain.addEventListener("input", () => {
+      updateBrowserInputGainLabel();
+      applyBrowserInputGain();
+    });
+    els.browserAutoGainControl.addEventListener("change", applyBrowserAudioConstraintsLive);
+    els.browserNoiseSuppression.addEventListener("change", applyBrowserAudioConstraintsLive);
+    els.browserEchoCancellation.addEventListener("change", applyBrowserAudioConstraintsLive);
+
+    els.resultsTitle.addEventListener("click", toggleResultsFullscreen);
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && els.resultsPanel.classList.contains("results-fullscreen")) {
+        toggleResultsFullscreen();
+      }
+    });
+
+    els.initBtn.addEventListener("click", async () => {
+      try {
+        setMessage("正在初始化模型…");
+        const data = await api("/api/initialize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            embedding_model_key: els.embeddingModel.value,
+            use_gpu: els.useGpu.checked,
+            verify_threshold: Number(els.verifyThreshold.value),
+          }),
+        });
+        state.initialized = true;
+        updateButtons();
+        els.metricModel.textContent = els.embeddingModel.value;
+        els.metricState.textContent = "ready";
+        setMessage(data.message || "模型已就绪");
+        els.streamMetrics.textContent = "模型就绪，可开始检测或录制声纹";
+      } catch (err) {
+        setMessage(err.message, true);
+      }
+    });
+
+    els.startBtn.addEventListener("click", async () => {
+      try {
+        setMessage("正在开始检测…");
+        const body = {
+          window_sec: Number(els.windowSec.value),
+          hop_sec: Number(els.hopSec.value),
+          embedding_model_key: els.embeddingModel.value,
+          use_gpu: els.useGpu.checked,
+          fixed_speaker_num: Number(els.fixedSpeakerNum.value) || 0,
+          verify_threshold: Number(els.verifyThreshold.value),
+          slow_inference_threshold_ms: Number(els.slowThreshold.value),
+          slow_inference_max_consecutive: Number(els.slowMaxConsecutive.value),
+          low_frequency_interval_sec: Number(els.lowFreqInterval.value),
+        };
+        const data = await api("/api/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        state.sessionId = data.session_id;
+        state.running = true;
+        state.history = [];
+        state.uploadedBytes = 0;
+        updateButtons();
+        els.metricModel.textContent = els.embeddingModel.value;
+        setMessage(data.message || "已开始");
+        await startMic();
+        els.streamMetrics.textContent = "麦克风已开，HTTP 推流中";
+      } catch (err) {
+        state.running = false;
+        if (!state.enrolling) state.sessionId = null;
+        updateButtons();
+        setMessage(err.message, true);
+      }
+    });
+
+    els.stopBtn.addEventListener("click", async () => {
+      try {
+        const wasEnrolling = state.enrolling;
+        await stopMic();
+        if (wasEnrolling && !state.running) {
+          await api("/api/voice-enroll/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: state.sessionId }),
+          }).catch(() => {});
+          state.enrolling = false;
+        }
+        if (state.running || !wasEnrolling) {
+          const data = await api("/api/stop", { method: "POST" });
+          setMessage(data.message || "已停止检测");
+        } else {
+          setMessage("已取消声纹录制");
+        }
+        state.running = false;
+        state.enrolling = false;
+        state.sessionId = null;
+        updateButtons();
+        els.streamMetrics.textContent = state.initialized
+          ? "已停止；模型仍就绪"
+          : "推流状态：已停止";
+        els.metricState.textContent = state.initialized ? "ready" : "idle";
+        els.sseDot.className = "dot connected";
+        els.sseStatus.textContent = state.initialized ? "模型就绪" : "SSE 已连接";
+        els.metricDetectMode.textContent = "正常";
+        els.metricDetectMode.classList.remove("warning");
+        els.detectModeCard.classList.remove("flash-red");
+      } catch (err) {
+        setMessage(err.message, true);
+      }
+    });
+
+    els.enrollStartBtn.addEventListener("click", async () => {
+      try {
+        const data = await api("/api/voice-enroll/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: state.sessionId }),
+        });
+        state.sessionId = data.session_id || state.sessionId;
+        state.enrolling = true;
+        state.uploadedBytes = 0;
+        updateButtons();
+        setEnrollHint(data.message || "开始录制");
+        if (!state.capturing) {
+          await startMic();
+        }
+        els.streamMetrics.textContent = "声纹录制推流中";
+      } catch (err) {
+        setEnrollHint(err.message, true);
+      }
+    });
+
+    els.enrollFinishBtn.addEventListener("click", async () => {
+      try {
+        setEnrollHint("正在提交声纹…");
+        const data = await api("/api/voice-enroll/finish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: state.sessionId }),
+        });
+        state.enrolling = false;
+        if (!state.running) {
+          await stopMic();
+          state.sessionId = null;
+          els.streamMetrics.textContent = state.initialized
+            ? "模型就绪"
+            : "声纹暂存完成";
+        }
+        updateButtons();
+        if (data.pending) {
+          setEnrollHint(data.message || "已暂存");
+        } else {
+          setEnrollHint(
+            `注册成功：总时长 ${data.duration_sec}s，有效语音 ${data.speech_sec}s`
+          );
+        }
+      } catch (err) {
+        setEnrollHint(err.message, true);
+      }
+    });
+
+    els.enrollCancelBtn.addEventListener("click", async () => {
+      try {
+        const data = await api("/api/voice-enroll/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: state.sessionId }),
+        });
+        state.enrolling = false;
+        if (!state.running) {
+          await stopMic();
+          state.sessionId = null;
+        }
+        updateButtons();
+        setEnrollHint(data.message || "已取消");
+      } catch (err) {
+        setEnrollHint(err.message, true);
+      }
+    });
+
+    els.enrollClearBtn.addEventListener("click", async () => {
+      try {
+        const data = await api("/api/voice-enroll/clear", { method: "POST" });
+        setEnrollHint(data.message || "已清除");
+        els.metricEnrolled.textContent = "否";
+      } catch (err) {
+        setEnrollHint(err.message, true);
+      }
+    });
+
+    els.enrollFromFileBtn.addEventListener("click", async () => {
+      const file = els.enrollFile.files && els.enrollFile.files[0];
+      if (!file) {
+        setEnrollHint("请先选择音频文件", true);
+        return;
+      }
+      try {
+        setEnrollHint(`正在解码 ${file.name}…`);
+        const pcm = await decodeAudioFileToPcm(file);
+        setEnrollHint("正在上传并注册/暂存…");
+        const resp = await fetch(`/api/voice-enroll/from-file?sample_rate=${SAMPLE_RATE}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: pcm,
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.message || "注册失败");
+        if (data.pending) {
+          setEnrollHint(data.message || "已暂存");
+          els.metricEnrolled.textContent = "暂存";
+        } else {
+          setEnrollHint(
+            `注册成功：总时长 ${data.duration_sec}s，有效语音 ${data.speech_sec}s`
+          );
+          els.metricEnrolled.textContent = "是";
+        }
+      } catch (err) {
+        setEnrollHint(err.message || String(err), true);
+      }
+    });
+
+    (async function boot() {
+      updateBrowserInputGainLabel();
+      updateButtons();
+      initResizableTables();
+      initCenterHoverZoom();
+      try {
+        await loadModels();
+        connectSSE();
+        const health = await api("/api/health");
+        const providers = (health.ort && health.ort.available_providers) || [];
+        setMessage(`服务就绪 · ORT providers: ${providers.join(", ") || "unknown"} · 请先初始化模型`);
+      } catch (err) {
+        setMessage(`初始化失败: ${err.message}`, true);
+      }
+    })();
+  </script>
+</body>
+</html>
